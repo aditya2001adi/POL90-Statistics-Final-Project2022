@@ -1,0 +1,281 @@
+---
+title: "The Relationship Between Watching Crime Dramas and Opinions of Police"
+author: |
+        | Aditya Bhalla
+date: "13 May 2022"
+output: 
+  bookdown::pdf_document2:
+    toc: FALSE
+header-includes:
+  \usepackage{float}
+  \floatplacement{figure}{h}
+  \renewcommand{\topfraction}{.95}
+  \renewcommand{\bottomfraction}{.95}
+  \renewcommand{\textfraction}{.1}
+  \renewcommand{\floatpagefraction}{.66}
+  \setcounter{topnumber}{3}
+  \setcounter{bottomnumber}{3}
+  \setcounter{totalnumber}{4}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r, include = FALSE}
+library(tidyverse)
+library(haven)
+library(MatchIt)
+library(sjPlot)
+library(janitor)
+library(cobalt)
+library(kableExtra)
+library(stargazer)
+library(equatiomatic)
+```
+
+```{r, include=FALSE}
+final_data <- read_sav("anes_timeseries_2016_sav/anes_timeseries_2016.sav")
+
+```
+
+```{r, include=FALSE}
+final_data <- final_data %>%
+  clean_names()
+
+View(final_data)
+
+```
+
+```{r, include=FALSE}
+final_cleaned <- final_data %>%
+  filter(v161363f == 0) %>%
+  filter(v162110 > 0 & v162110 < 150) %>%
+  mutate(
+    watch_crime = case_when(
+      (v161366 == 1 | v161368 == 1 | v161374 == 1 | v161377 == 1 | v161392 == 1 | v161401 == 1) ~ "Watch Crime Drama",
+      TRUE    ~ "Do Not Watch Crime Drama"
+    ) %>% as.factor(),
+  police_feeling = case_when(
+    v162110 > 50 ~ 1,
+    TRUE         ~ 0
+  ) %>% as.factor(),
+  race = case_when(
+    v161310x == 1 ~ "White",
+    v161310x == 2 ~ "Black",
+    v161310x == 3 ~ "Asian",
+    v161310x == 4 ~ "Native American",
+    v161310x == 5 ~ "Hispanic",
+    v161310x == 6 ~ "Other"
+  ) %>% as.factor(),
+  sex = case_when(
+    v161342 == 1 ~ "Male",
+    v161342 == 2 ~ "Female"
+  ) %>% as.factor(),
+  ideology = case_when(
+    (v161126 == 1 | v161126 == 2 | v161126 == 3) ~ "Liberal",
+    v161126 == 4 ~ "Moderate",
+    (v161126 == 5 | v161126 == 6 | v161126 == 7) ~ "Conservative"
+  ) %>% as.factor(),
+  pol_attn = case_when(
+    v161003 == 1 ~ "Always",
+    v161003 == 2 ~ "Most of the Time",
+    v161003 == 3 ~ "About Half the Time",
+    v161003 == 4 ~ "Some of the Time",
+    v161003 == 5 ~ "Never"
+  ) %>% as.factor(),
+  relig_important = case_when(
+    v161241 == 1 ~ "Important",
+    v161241 == 2 ~ "Not Important"
+  ) %>% as.factor(),
+  age = v161267 %>% as.numeric(),
+  
+    
+  ) %>%
+  filter(age > 0)
+
+```
+
+```{r, include = FALSE}
+final_cleaned2 <- final_cleaned %>%
+  filter(v161366 >= 0 & v161368 >= 0 & v161374 >= 0 & v161377 >= 0 & v161392 >= 0 & v161401 >= 0) %>%
+  rowwise() %>%
+  mutate(
+    crime_index = mean(c(as.numeric(v161366), as.numeric(v161368), as.numeric(v161374), as.numeric(v161377), as.numeric(v161392), as.numeric(v161401)), na.rm = TRUE)
+  )
+
+```
+
+```{r, include = FALSE}
+indexed_lm <- lm(v162110 ~ crime_index, data = final_cleaned2)
+
+summary(indexed_lm)
+```
+
+```{r Linear-Model, echo = FALSE, warning=FALSE, include = FALSE}
+ggplot(final_cleaned2, aes(x = crime_index, y = v162110)) +
+  stat_smooth(method = "lm")
+```
+
+
+```{r, include = FALSE}
+glm_naive_crime <- glm(police_feeling ~ watch_crime + sex + race + age + ideology + pol_attn + relig_important, family = binomial, data = final_cleaned)
+
+summary(glm_naive_crime)
+```
+
+
+
+
+
+```{r, include = FALSE}
+final_cleaned3 <- final_cleaned %>%
+  select(sex, age, race, ideology, watch_crime, police_feeling, pol_attn, relig_important) %>%
+  mutate(
+    watch_crime_bin = ifelse(watch_crime == "Watch Crime Drama", 1, 0),
+    sex_bin = ifelse(sex == "Male", 1, 0)
+  ) %>%
+  na.omit()
+
+match_out <- matchit(
+  formula = watch_crime_bin ~ sex_bin + race + ideology,
+  data = final_cleaned3,
+  method = "nearest",
+  caliper = 0.02
+)
+
+match_data <- match.data(match_out)
+
+```
+
+
+```{r, include = FALSE}
+glm_matched <- glm(
+  formula = police_feeling ~ watch_crime + sex + race + age + ideology + pol_attn + relig_important,
+  family = binomial,
+  data = match_data
+)
+
+summary(glm_matched)
+
+```
+
+# Introduction
+Is watching crime-related TV shows associated with an increase in support for police? Many scholars have studied how media influences the way in which people view police and policing in the United States. The term "copaganda" has arisen as a way of classifying media that glorifies police work and positively influence views of police. Yonce Hitt of Oberlin College argues that crime dramas share "common, foundational elements with successful propaganda campaigns" (2019). This study attempts to evaluate whether crime dramas are, indeed, associated with improved views of policing. Using data from the 2016 American National Election Studies Time Series Study, we use both linear and logistic regression to evaluate the relationship between watching crime dramas and views of police. While a bivariate model suggests a relationship between watching crime dramas and increased positive opinion of policing, after adding controls, logistic regression shows no statistically significant relationship between watching crime dramas and increased positive opinions of police.
+
+# Theory
+Shows like NCIS-Los Angeles, Criminal Minds, Chicago PD, and others center police and crime-fighting as primary functions of the shows. In academic and abolitionist theory, critics of law-enforcement argue that these shows not only inaccurately portray police, but glorify and revere police, bettering the viewer's perception of policing. Danielle Slakoff, Assistant Professor of Criminal Justice at Sacramento State University, argues that copaganda media (or television in which police offers are portrayed positively) serves to create a positive image of police in the mind of the viewer and "equate the police with heroes." However, a study conducted by the National Institute of Justice in 2003 in the city of Los Angeles found that media did not have an effect on residents' views of police and, rather, residents' perception of crime in their own neighborhood was more significant in shaping their opinion of police (2003). However, this study cited that one limitation of their experiment was that the areas of Los Angeles the study covered were not intended to be representative of the entire city. Nevertheless, 
+
+
+# Data
+Our data comes from the 2016 American National Survey Studies Time Series Study. The study consisted of two parts, the first of which interviewed respondents in the months before the 2016 election and the second of which interviewed respondents in the months following the election. Our outcome variable is a feeling thermometer of police. For this study's linear regression model, this feeling thermometer was not re-coded, as it is a contiuous variable. However, for the logistic regression model, we re-coded this data. Responses above a numerical value of 50 were coded as "Generally Positive" and responses below 50 were coded as "Generally Negative." Our explanatory valuable in this study is whether or not the respondent watches any of six different crime-related shows. We chose the shows in the dataset that heavily involve crime-fighting and law-enforcement. The included shows are The Blacklist, Criminal Minds, NCIS, Scorpion, Daredevil, and Hawaii Five-O. All of these shows have a significant emphasis on fighting crime through use of law enforcement and police. 
+
+All of our models retain a significant portion of the original data. Models that did not include matchign retained at least 65 percent of the data. In all scenarios, list-wise deletion was the cause of missingness. Nevertheless, because a good majority of the data was retained, imputation was not needed.
+
+The data did include some heterogeneity and imbalance, however. As a consequence, matching was used in the third model to ensure an "apples-to-apples" comparison. The model used data that was matched based on the demographic variables of race,sex, and ideology. Figure \@ref(tab:love-plot) shows the balance of covariates.  
+
+```{r love-plot, warning = FALSE, echo = FALSE, fig.cap = "Love Plot Showing Adjustments Due to Matching"}
+love.plot(match_out)
+
+```
+
+Table \@ref(tab:summary-stats) below shows summary statistics of our data. 
+
+```{r summary-stats, echo = FALSE}
+final_summarystat <- final_cleaned %>%
+  select(watch_crime, police_feeling, sex, age, pol_attn, ideology, relig_important, race)
+
+options(knitr.kable.NA = '')
+summary(final_summarystat) %>% kable(col.names = c("Watch Crime", "Police Feeling", "Sex", "Age", "Political Attention", "Ideology", "Religion Important", "Race"), caption = "Summary Statistics for the Data") %>% kable_styling(latex_options = c("HOLD_position", "scale_down")) %>% row_spec(0, bold = T)
+
+
+```
+
+Note that, in the above table, the Police Feeling column was coded as a true binary, where the number 1 equates to "Generally Positive" feelings about police and 0 equates to "Generally Negative" feelings about police. 
+
+# Methods
+The first model utilizes bivariate linear regression, where a "crime watching index" was created by taking the mean value across all of the shows for each respondent. Because each respondent responded to each show with "0" or "1" (corresponding to the respondent not watching the show and watching the show, respectively), a mean of their responses across all six shows creates an index, where a mean of 1 means that the respondent has watched each of the shows and a mean of 0 means that they have watched none of the shows. This linear regression also utilizes the police feeling thermometer as a continuous variable, rather than being coded as a binary (as seen in the two logistic regression models). This was appropriate because it helps to answer not only if watching a crime drama is associated with a more positive opinion of police, but also if watching a greater number of crime dramas is associated with a more positive opinion regarding policing. 
+
+The second model used was a logistic regression which controlled for race, sex, age, ideology, political attention, and religiosity. The binary outcome variable was feelings regarding police being either positive or negative, where responses to the feeling thermometer which over 50 were categorized as generally positive and those under 50 were categorized as generally negative. The creation of this binary outcome was important because it allowed for binning the data into two groups, rather than keeping the police feeling thermometer as a consecutive variable. It's difficult to qualify the difference between a response of, say, 20 and 30 in the feeling thermometer. Converting the variable to a binary allowed for more a more objective outcome. 
+
+The final model was a logistic regression which matched the data based on race, sex, and ideology. The controls for this logistic regression were the same as those used in the model outlined above. Matching was important with this data because, ultimately, the goal of this experiment is to make an accurate comparisons between those who do watch crime shows and those who do not based on the outcome variable. Thus, it's important that this comparison is "apples-to-apples." By matching the data against the explanatory variable, the data finds those who have differing responses to the crime-watching variable but are similar with respects to race, sex, and ideology. Then, by comparing these groups, the logistic regression model becomes more accurate, since the comparison is between more similar groups, both demographically and ideology. An equation for both of our logistic regression models can be found in the Appendix.
+
+# Results
+
+Table \@ref(tab:stargazer-table2) shows the results of each model, along with their statistical significance based on their p-value. While the bivariate linear model shows a statistically significant positive correlation between watching crime-related shows and supporting police, both logistic regressions do not show statistically significant increases, as they both include added controls. 
+
+The linear regression model used a crime index as its explanatory variable, and Table \@ref(tab:stargazer-table2) shows that the model finds a strong association between the index and feelings regarding police. The model shows that a one unit increase in the crime index was associated with an 8 point increase in the feeling thermometer for policing. This estimate had a p-value of 0.00003. However, note that our index itself is between 0 and 1, meaning that there was an 8 point difference between those who do not watch any crime dramas and those who watch all of them. Furthermore, this model is bivariate, meaning it did not utilize any controls. Upon adding controls with our logistic regressions, our results change. 
+
+Our first logistic regression shows that there is no statistically significant relationship between watching crime-related shows and having a positive view of police. The model shows that watching a crime drama was associated with an increase in supporting police by a factor of exp(0.19). That is, watching a crime drama was associated with a multiplicative factor of 1.21 times the odds of supporting police compared to those who did not watch crime dramas. However, this regression yielded a p-value of 0.141, well above the 0.05 cutoff. Thus, we fail to reject the null hypothesis that there is no relationship between watching crime-related shows and feelings regarding police.
+
+Our second logistic regression utilized matching, and also showed that there was no statistically significant relationship between watching crime dramas and increased positive opinions of police. The model shows that watching crime-related TV shows was associated with an increase in supporting police by a factor of 0.21. That is, watching crime-related shows was associated with 1.23 times the odds of supporting police compared to those who did not watch any crime dramas. However, this too failed to yield a statistically significant p-value (0.144). 
+
+Figures 2, 3, and 4 show plots of each model.  
+
+
+```{r results-table, echo = FALSE, results = 'asis'}
+stargazer(indexed_lm, glm_naive_crime, glm_matched, single.row = TRUE, header = FALSE, type = "latex", digits = 2, column.sep.width = "2pt", font.size="footnotesize", table.placement = "H", title = "Summary of Linear Model, Logistic Regression, and Matched Logistic Regression", label = "tab:stargazer-table2")
+
+
+```
+
+
+
+```{r Indexed-Linear-Model, echo = FALSE, message=FALSE, fig.cap = "Naive Linear Model with Indexed Crime-Show Watching", fig.width=3.5, fig.height = 2.5}
+ggplot(final_cleaned2, aes(x = crime_index, y = v162110)) +
+  stat_smooth(method = "lm") + labs(x = "Crime Show Index", y = "Police Feeling Thermometer", title = "Crime Shows and Police Support") + theme(plot.title = element_text(size = 12)) 
+```
+
+
+```{r Logistic-Regression-With-Controls, echo = FALSE, fig.cap= "Logistic Regression with Controls", fig.width = 3.5, fig.height = 2.5}
+plot_model(glm_naive_crime, type = "eff", terms = c("watch_crime")) +
+  labs(x = "Watched Crime Drama?", title = "Probability of Positive View of Police", y = "Percent") + theme(plot.title = element_text(size = 12)) 
+
+```
+
+
+```{r Matched-Model, echo = FALSE, fig.cap= "Model with Matched Data", results = 'asis', fig.width=3.5, fig.height=2.5}
+plot_model(glm_matched, type = "eff", terms = c("watch_crime")) + labs(title = "Probability of Positive View of Police", x = "Watched Crime Drama?", y = "Percent") + theme(plot.title = element_text(size = 12)) 
+
+
+```
+
+
+\newpage
+
+# Discussion
+While this study was fairly comprehensive, limitations may arise from a lack of a narrow definition for what constitutes a crime-related drama. While all the shows in this study utilize law enforcement and policing often, without a standardized definition for what constitutes a "crime" drama the explanatory variable may be slightly vague. A more well-defined notion of a crime drama and what shows fit into this category would greatly improve this study. Furthermore, a possible extension of this study could be to evaluate the relationship between watching crime shows and support for police versus watching crime-related shows and support for the criminal justice system more broadly.
+
+# Conclusion
+While many scholars believe that media that portrays police in a positive light wrongly influences public perception regarding policing, this study did not find a statistically significant relationship between watching crime-related shows and feelings surrounding police. Indeed, after controlling for race, sex, ideology, political participation, and religion, as well as after matching our data, this study finds any relationship between watching crime dramas and increased support for police to be marginal at best. While this undermines some abolitionist and far-left theories regarding how public views of police are developed, the limitations of this study could be prevent any definitive claims regarding the impact of police-related media more broadly and how this media impacts views of police.
+
+
+\newpage
+
+\begin{thebibliography}{wholeads}
+
+\bibitem{slakoff}
+Danielle C. Slakoff, Evan C. Douglas \& Jason A. Smith (2022) White Supremacy, Revisionist History, and Masked Vigilantes: Understanding HBO’s Watchmen through the Eyes of Cultural Critics/Writers in Major Mainstream Newspapers, Howard Journal of Communications, DOI: 10.1080/10646175.2022.2065896
+
+
+\bibitem{nij}Karen M. Hennigan, Cheryl L. Maxson, David Sloane \& Molly Ranney (2002) Community views on crime and policing: Survey mode effects on bias in community surveys, Justice Quarterly, 19:3, 565-587, DOI: 10.1080/07418820200095351
+ 
+
+\bibitem{yoncehitt}
+Hitt, Yonce, "The Elements in Historical Propaganda Recurring in Criminal Procedurals: A Study of NCIS and its Portrayal of the War on Terror" (04/27/19). Senior Symposium. 1.
+
+
+\end{thebibliography}
+
+\newpage
+
+# Appendix
+Equation 1 below shows the equation for both of our logistic regression models.
+
+\begin{equation}
+\label{eq:matched-model1}
+\begin{aligned}
+\log\left[ \frac { P( \operatorname{PoliceFeeling} = \operatorname{1} ) }{ 1 - P( \operatorname{PoliceFeeling} = \operatorname{1} ) } \right] &= \alpha + \beta_{1}(\operatorname{WatchCrime}_{\operatorname{WatchCrimeRelatedShow}})\ + \\
+&\quad \beta_{2}(\operatorname{Sex}) + \beta_{3}(\operatorname{Race}) + \beta_{4}(\operatorname{Age}) +  \beta_{5}(\operatorname{Ideology}) + \beta_{6}(\operatorname{PoliticalAttention}) + \beta_{7}(\operatorname{Religiosity})
+\end{aligned}
+\end{equation}
